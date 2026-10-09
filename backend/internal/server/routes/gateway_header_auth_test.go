@@ -43,22 +43,40 @@ func gatewayHeaderAuthTestRouter(t *testing.T) (*gin.Engine, *service.SettingSer
 	return r, settings, &calls
 }
 
-func TestGatewayRoutesHeaderAuthenticationCoversEveryEntry(t *testing.T) {
+func TestGatewayRoutesHeaderAuthenticationCoversModelCalls(t *testing.T) {
 	r, _, calls := gatewayHeaderAuthTestRouter(t)
 	parameters := regexp.MustCompile(`:[^/]+`)
 	for _, route := range r.Routes() {
 		path := parameters.ReplaceAllString(route.Path, "test")
 		path = strings.ReplaceAll(path, "*subpath", "compact")
 		path = strings.ReplaceAll(path, "*modelAction", "gemini:generateContent")
+		// Table-driven routing coverage includes generation aliases and excludes
+		// pure reads, cancellations and voice-resource maintenance.
+		isConversationGET := strings.HasSuffix(route.Path, "/responses") || strings.HasSuffix(route.Path, "/realtime") || strings.Contains(route.Path, "/live/") || route.Path == "/backend-api/codex/:call_id"
+		protected := route.Method == http.MethodPost || (route.Method == http.MethodGet && isConversationGET)
+		if strings.HasSuffix(route.Path, "/count_tokens") || strings.HasSuffix(route.Path, "/cancel") || strings.HasSuffix(route.Path, "/custom-voices") {
+			protected = false
+		}
 		t.Run(route.Method+" "+path, func(t *testing.T) {
+			before := *calls
 			request := httptest.NewRequest(route.Method, path, strings.NewReader(`{"model":"test"}`))
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, request)
-			require.Equal(t, 401, w.Code, w.Body.String())
-			require.Contains(t, w.Body.String(), "Request header authentication failed.")
+			if protected {
+				require.Equal(t, 401, w.Code, w.Body.String())
+				require.Contains(t, w.Body.String(), "Request header authentication failed.")
+				require.Equal(t, before, *calls)
+			} else if strings.HasPrefix(path, "/v1beta/") || strings.HasPrefix(path, "/antigravity/v1beta/") {
+				// These native routes use actual Google auth, so a missing API key
+				// must be rejected by that layer, not by the extra header gate.
+				require.Equal(t, 401, w.Code)
+				require.Contains(t, w.Body.String(), "API key is required")
+			} else {
+				require.Equal(t, 202, w.Code, "metadata must reach the existing API key middleware")
+				require.Equal(t, before+1, *calls)
+			}
 		})
 	}
-	require.Zero(t, *calls, "missing header must be rejected before API key lookup or upstream forwarding")
 }
 
 func TestGatewayRoutesHeaderAuthenticationStillRequiresAPIKeyAndCanDisable(t *testing.T) {
@@ -114,4 +132,16 @@ func TestGatewayRoutesHeaderAuthenticationMultipleRules(t *testing.T) {
 		require.Equal(t, 202, w.Code)
 	}
 	require.Equal(t, 3, *calls, "API key lookup must happen only when all headers match")
+}
+
+func TestGatewayRoutesHeaderAuthenticationModelReadsStillReachAPIKeyAuth(t *testing.T) {
+	r, _, calls := gatewayHeaderAuthTestRouter(t)
+	for _, path := range []string{"/v1/models", "/models", "/v1/models/deepseek-chat", "/backend-api/codex/models", "/antigravity/models", "/antigravity/v1/models"} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("User-Agent", "CC-Switch")
+		r.ServeHTTP(w, req)
+		require.Equal(t, 202, w.Code, "discovery must reach the existing API key gate without XundaAI headers")
+	}
+	require.Equal(t, 6, *calls)
 }

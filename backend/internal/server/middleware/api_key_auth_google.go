@@ -3,6 +3,7 @@ package middleware
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -145,64 +146,63 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			return
 		}
 
-		// Key 状态检查（状态字段可能因后台异步刷新而滞后，故显式拦截）。
-		switch apiKey.Status {
-		case service.StatusAPIKeyQuotaExhausted:
-			abortWithGoogleError(c, 429, "API key 额度已用完")
-			return
-		case service.StatusAPIKeyExpired:
-			abortWithGoogleError(c, 403, "API key 已过期")
+		modelDiscoveryRequest := isModelDiscoveryRequest(c.Request.Method, c.Request.URL.Path)
+		if apiKey.Status == service.StatusAPIKeyExpired || apiKey.IsExpired() {
+			abortWithGoogleError(c, http.StatusForbidden, "API key 已过期")
 			return
 		}
-
-		// 运行时过期/配额检查（即使状态是 active，也要检查时间和用量，与主中间件一致）。
-		if apiKey.IsExpired() {
-			abortWithGoogleError(c, 403, "API key 已过期")
-			return
-		}
-		if apiKey.IsQuotaExhausted() {
-			abortWithGoogleError(c, 429, "API key 额度已用完")
-			return
-		}
-
-		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
-		if isSubscriptionType && subscriptionService != nil {
-			subscription, err := subscriptionService.GetActiveSubscription(
-				c.Request.Context(),
-				apiKey.User.ID,
-				apiKey.Group.ID,
-			)
-			if err != nil {
-				abortWithGoogleError(c, 403, "No active subscription found for this group")
+		if !modelDiscoveryRequest {
+			// Key 状态检查（状态字段可能因后台异步刷新而滞后，故显式拦截）。
+			if apiKey.Status == service.StatusAPIKeyQuotaExhausted {
+				abortWithGoogleError(c, 429, "API key 额度已用完")
 				return
 			}
 
-			needsMaintenance, err := subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
-			if needsMaintenance {
-				refreshed, maintenanceErr := subscriptionService.EnsureWindowMaintenance(c.Request.Context(), subscription)
-				if maintenanceErr != nil {
-					abortWithGoogleError(c, 500, "Failed to maintain subscription usage windows")
+			// 运行时过期/配额检查（即使状态是 active，也要检查时间和用量，与主中间件一致）。
+			if apiKey.IsQuotaExhausted() {
+				abortWithGoogleError(c, 429, "API key 额度已用完")
+				return
+			}
+
+			isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+			if isSubscriptionType && subscriptionService != nil {
+				subscription, err := subscriptionService.GetActiveSubscription(
+					c.Request.Context(),
+					apiKey.User.ID,
+					apiKey.Group.ID,
+				)
+				if err != nil {
+					abortWithGoogleError(c, 403, "No active subscription found for this group")
 					return
 				}
-				subscription = refreshed
-				_, err = subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
-			}
-			if err != nil {
-				status := 403
-				if errors.Is(err, service.ErrDailyLimitExceeded) ||
-					errors.Is(err, service.ErrWeeklyLimitExceeded) ||
-					errors.Is(err, service.ErrMonthlyLimitExceeded) {
-					status = 429
-				}
-				abortWithGoogleError(c, status, err.Error())
-				return
-			}
 
-			c.Set(string(ContextKeySubscription), subscription)
-		} else {
-			if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
-				abortWithGoogleError(c, 403, "Insufficient account balance")
-				return
+				needsMaintenance, err := subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
+				if needsMaintenance {
+					refreshed, maintenanceErr := subscriptionService.EnsureWindowMaintenance(c.Request.Context(), subscription)
+					if maintenanceErr != nil {
+						abortWithGoogleError(c, 500, "Failed to maintain subscription usage windows")
+						return
+					}
+					subscription = refreshed
+					_, err = subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
+				}
+				if err != nil {
+					status := 403
+					if errors.Is(err, service.ErrDailyLimitExceeded) ||
+						errors.Is(err, service.ErrWeeklyLimitExceeded) ||
+						errors.Is(err, service.ErrMonthlyLimitExceeded) {
+						status = 429
+					}
+					abortWithGoogleError(c, status, err.Error())
+					return
+				}
+
+				c.Set(string(ContextKeySubscription), subscription)
+			} else {
+				if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
+					abortWithGoogleError(c, 403, "Insufficient account balance")
+					return
+				}
 			}
 		}
 

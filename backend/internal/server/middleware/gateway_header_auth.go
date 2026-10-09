@@ -11,11 +11,45 @@ import (
 const gatewayHeaderAuthOriginalUAKey = "gateway_header_auth_original_user_agent"
 const GatewayHeaderAuthFailedCode = "gateway_header_auth_failed"
 
+// Read-only discovery and task bookkeeping must remain available to a valid
+// key without client-specific headers. WebSocket conversation entrypoints are
+// GET routes but still initiate/attach to model inference, so retain the gate.
+func requiresGatewayHeaderAuthentication(method, path string) bool {
+	codexDirect := strings.HasPrefix(path, "/backend-api/codex/")
+	for _, prefix := range []string{"/backend-api/codex", "/antigravity/v1beta", "/antigravity/v1", "/v1beta", "/api/v3", "/v3", "/v1"} {
+		if strings.HasPrefix(path, prefix+"/") {
+			path = strings.TrimPrefix(path, prefix)
+			break
+		}
+	}
+	if method == http.MethodGet {
+		if path == "/responses" || path == "/realtime" || strings.HasPrefix(path, "/live/") {
+			return true
+		}
+		// Codex live sideband is registered as GET /backend-api/codex/:call_id.
+		return codexDirect && path != "/models" && len(path) > 1 && !strings.Contains(path[1:], "/")
+	}
+	if method != http.MethodPost {
+		return false
+	}
+	if path == "/messages/count_tokens" || path == "/custom-voices" {
+		return false
+	}
+	if strings.HasPrefix(path, "/models/") && strings.HasSuffix(path, ":countTokens") {
+		return false
+	}
+	if strings.HasPrefix(path, "/images/batches/") && strings.HasSuffix(path, "/cancel") {
+		return false
+	}
+	return true
+}
+
 // GatewayHeaderAuthentication is mounted only on gateway routes, before API key
-// authentication and upstream scheduling. It does not affect the admin panel.
+// authentication and upstream scheduling for model calls. Discovery and other
+// read-only routes retain API key authentication but bypass this extra gate.
 func GatewayHeaderAuthentication(settings *service.SettingService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if settings == nil { // Isolated route fixtures have no settings service.
+		if !requiresGatewayHeaderAuthentication(c.Request.Method, c.Request.URL.Path) || settings == nil {
 			c.Next()
 			return
 		}

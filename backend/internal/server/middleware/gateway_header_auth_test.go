@@ -107,7 +107,7 @@ func TestGatewayHeaderAuthenticationCustomSettingsAndHotUpdate(t *testing.T) {
 }
 
 func TestGatewayHeaderAuthenticationErrorProtocolsAndFailClosed(t *testing.T) {
-	for _, path := range []string{"/v1/messages", "/messages/count_tokens", "/v1beta/models/gemini:generateContent", "/antigravity/v1beta/models/gemini:generateContent"} {
+	for _, path := range []string{"/v1/messages", "/messages", "/v1beta/models/gemini:generateContent", "/antigravity/v1beta/models/gemini:generateContent"} {
 		w := headerAuthRequest(headerAuthRouter(t, service.NewSettingService(&gatewayHeaderSettingsRepo{}, &config.Config{}), false), path, http.Header{})
 		require.Equal(t, 401, w.Code)
 		var body map[string]any
@@ -173,4 +173,66 @@ func TestGatewayHeaderAuthenticationAllRulesRequired(t *testing.T) {
 	require.NoError(t, svc.SetGatewayHeaderAuthSettings(context.Background(), settings))
 	require.Equal(t, 401, headerAuthRequest(router, "/v1/messages", http.Header{"User-Agent": {"XundaAI/v1"}}).Code)
 	require.Equal(t, 200, headerAuthRequest(router, "/v1/messages", http.Header{"User-Agent": {"XundaAI/v2"}}).Code)
+}
+
+func TestGatewayHeaderAuthenticationInferenceScope(t *testing.T) {
+	for _, path := range []string{
+		"/v1/messages", "/antigravity/v1/messages", "/v1/chat/completions", "/chat/completions",
+		"/v1/responses", "/responses/compact", "/backend-api/codex/responses/compact", "/v1/systemone",
+		"/v1beta/models/gemini:generateContent", "/v1beta/models/gemini:streamGenerateContent",
+		"/antigravity/v1beta/models/gemini:generateContent", "/v1/images/generations", "/v1/images/edits/async",
+		"/v1/videos", "/v1/embeddings", "/v1/tts", "/v1/stt", "/api/v3/contents/generations/tasks",
+		"/v1/live", "/backend-api/codex/realtime/calls",
+	} {
+		require.True(t, requiresGatewayHeaderAuthentication(http.MethodPost, path), path)
+	}
+	for _, path := range []string{"/v1/responses", "/responses", "/backend-api/codex/responses", "/v1/realtime", "/realtime", "/v1/live/call-123", "/backend-api/codex/call-123"} {
+		require.True(t, requiresGatewayHeaderAuthentication(http.MethodGet, path), path)
+	}
+	for _, path := range []string{
+		"/v1/models", "/models", "/v1/models/deepseek-chat", "/backend-api/codex/models",
+		"/antigravity/models", "/antigravity/v1/models", "/v1beta/models", "/v1beta/models/gemini",
+		"/antigravity/v1beta/models/gemini", "/v1/usage", "/v1/sub2api/billing",
+		"/v1/images/tasks/task-123", "/v1/images/batches/models", "/v1/images/batches/batch-123/download",
+		"/v1/videos/request-123", "/v1/videos/request-123/content", "/v3/contents/generations/tasks/task-123",
+		"/v1/custom-voices", "/v1/custom-voices/voice-123/audio",
+	} {
+		require.False(t, requiresGatewayHeaderAuthentication(http.MethodGet, path), path)
+	}
+	for _, path := range []string{"/v1/messages/count_tokens", "/messages/count_tokens", "/antigravity/v1/messages/count_tokens", "/v1beta/models/gemini:countTokens", "/v1/images/batches/batch-123/cancel", "/v1/custom-voices", "/custom-voices"} {
+		require.False(t, requiresGatewayHeaderAuthentication(http.MethodPost, path), path)
+	}
+	require.False(t, requiresGatewayHeaderAuthentication(http.MethodDelete, "/v1/images/batches/batch-123"))
+	require.False(t, requiresGatewayHeaderAuthentication(http.MethodPatch, "/v1/custom-voices/voice-123"))
+}
+
+func TestGatewayHeaderAuthenticationReadOnlySkipsRulesAndSettingsLookup(t *testing.T) {
+	// No generation headers, and even settings storage is unavailable: read-only
+	// metadata should proceed to API key auth rather than fail this extra gate.
+	svc := service.NewSettingService(&gatewayHeaderSettingsRepo{err: errors.New("settings DB unavailable")}, &config.Config{})
+	router := headerAuthRouter(t, svc, false)
+	for _, path := range []string{"/v1/models", "/models/deepseek-chat", "/backend-api/codex/models", "/v1beta/models/gemini", "/v1/usage", "/v1/images/tasks/task-123"} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusOK, w.Code, path)
+	}
+	w := headerAuthRequest(router, "/v1/messages", http.Header{})
+	require.Equal(t, http.StatusServiceUnavailable, w.Code, "real model calls must still fail closed when config cannot be read")
+}
+
+func TestGatewayHeaderAuthenticationMetadataBypassesAllConfiguredRules(t *testing.T) {
+	svc := service.NewSettingService(&gatewayHeaderSettingsRepo{}, &config.Config{})
+	require.NoError(t, svc.SetGatewayHeaderAuthSettings(context.Background(), service.GatewayHeaderAuthSettings{Enabled: true, Rules: []service.GatewayHeaderAuthRule{
+		{HeaderName: "User-Agent", RequiredSubstring: "XundaAI"}, {HeaderName: "X-Client-Auth", RequiredSubstring: "allowed-app"},
+	}}))
+	router := headerAuthRouter(t, svc, false)
+	for _, path := range []string{"/v1/models", "/v1beta/models", "/antigravity/v1/models", "/backend-api/codex/models"} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("User-Agent", "CC-Switch")
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+	}
+	w := headerAuthRequest(router, "/v1/messages", http.Header{"User-Agent": {"CC-Switch"}})
+	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
