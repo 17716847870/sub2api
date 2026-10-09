@@ -219,3 +219,27 @@ func TestOpenAIGatewayHandlerSubmitOpenAIUsageRecordTask_SearchCountUsesMandator
 
 	require.True(t, called.Load(), "search surcharge usage task must be mandatory when async submit is dropped")
 }
+
+func TestGatewayUsageRecordWithIPQuotaSettlesSynchronously(t *testing.T) {
+	for _, openAI := range []bool{false, true} {
+		pool := newUsageRecordTestPool(t)
+		block := make(chan struct{})
+		release := make(chan struct{})
+		pool.Submit(func(context.Context) { close(block); <-release })
+		<-block
+		quota, err := service.NewDailyIPTokenQuotaService(nil, nil)
+		require.NoError(t, err)
+		ctx := service.WithDailyIPTokenQuota(context.Background(), quota, "203.0.113.8")
+		var ran atomic.Bool
+		task := func(context.Context) { ran.Store(true) }
+		if openAI {
+			h := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
+			h.submitUsageRecordTask(ctx, task)
+		} else {
+			h := &GatewayHandler{usageRecordWorkerPool: pool}
+			h.submitUsageRecordTask(ctx, task)
+		}
+		close(release)
+		require.True(t, ran.Load(), "quota usage must commit before returning, even with a busy worker pool")
+	}
+}

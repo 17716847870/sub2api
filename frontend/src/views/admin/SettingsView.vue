@@ -203,6 +203,8 @@
 
         <!-- Tab: Gateway -->
         <div v-show="activeTab === 'gateway'" class="space-y-6">
+          <GatewayHeaderAuthSettings />
+          <DailyIPTokenQuotaSettings />
           <!-- Overload Cooldown (529) Settings -->
           <div class="card">
             <div
@@ -9011,6 +9013,9 @@ import type {
   Proxy,
 } from "@/types";
 import type { ProviderInstance } from "@/types/payment";
+import GatewayHeaderAuthSettings from "@/views/admin/settings/GatewayHeaderAuthSettings.vue";
+import DailyIPTokenQuotaSettings from "@/views/admin/settings/DailyIPTokenQuotaSettings.vue";
+import { useRoute } from "vue-router";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import Icon from "@/components/icons/Icon.vue";
 import Select, { type SelectOption } from "@/components/common/Select.vue";
@@ -9099,7 +9104,8 @@ type SettingsTab =
   | "payment"
   | "email"
   | "backup";
-const activeTab = ref<SettingsTab>("general");
+const route = useRoute();
+const activeTab = ref<SettingsTab>(route?.query.tab === "gateway" ? "gateway" : "general");
 const settingsTabs = [
   { key: "general" as SettingsTab, icon: "home" as const },
   { key: "agreement" as SettingsTab, icon: "document" as const },

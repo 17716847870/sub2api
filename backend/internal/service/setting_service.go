@@ -144,6 +144,12 @@ type SettingService struct {
 	panelRateLimitCache atomic.Value
 	panelRateLimitSF    singleflight.Group
 
+	gatewayHeaderAuthSettingsMu    sync.Mutex
+	gatewayHeaderAuthSettingsCache *cachedGatewayHeaderAuthSettings
+
+	dailyIPTokenQuotaSettingsMu    sync.Mutex
+	dailyIPTokenQuotaSettingsCache *cachedDailyIPTokenQuotaSettings
+
 	// openAIQuotaAutoPauseSettingsCache holds the most recently observed quota auto-pause
 	// settings. GetOpenAIQuotaAutoPauseSettings reads this atomic.Value on the request hot
 	// path without ever blocking on the DB; when the cached entry expires, a background

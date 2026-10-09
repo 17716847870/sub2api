@@ -439,6 +439,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/ip-token-limits',
+    name: 'AdminIPTokenLimits',
+    component: () => import('@/views/admin/IPTokenLimitsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Daily IP token limits',
+      titleKey: 'admin.ipTokenQuota.title',
+      descriptionKey: 'admin.ipTokenQuota.description'
+    }
+  },
+  {
     path: '/admin/users',
     name: 'AdminUsers',
     component: () => import('@/views/admin/UsersView.vue'),

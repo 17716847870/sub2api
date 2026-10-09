@@ -2559,6 +2559,10 @@ func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task serv
 	if task == nil {
 		return
 	}
+	if service.DailyIPTokenQuotaEnabled(parent) {
+		h.submitMandatoryUsageRecordTask(parent, task)
+		return
+	}
 	task, abandon := wrapUsageRecordTaskContext(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); mode != service.UsageRecordSubmitModeDroppedStopped {
@@ -2593,7 +2597,8 @@ func (h *GatewayHandler) submitMandatoryUsageRecordTask(parent context.Context, 
 		return
 	}
 	task, _ = wrapUsageRecordTaskContext(parent, task)
-	if h.usageRecordWorkerPool != nil {
+	// With an IP quota, settle before the next request/WS turn can observe usage.
+	if h.usageRecordWorkerPool != nil && !service.DailyIPTokenQuotaEnabled(parent) {
 		if mode := h.usageRecordWorkerPool.Submit(task); !mode.Dropped() {
 			return
 		}

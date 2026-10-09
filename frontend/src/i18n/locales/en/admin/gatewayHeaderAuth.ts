@@ -1,0 +1,27 @@
+export default {
+  gatewayHeaderAuth: {
+    rulesTitle: 'Header rules',
+    matchAllHint: 'All rules must match. A missing or non-matching header rejects the request.',
+    addRule: 'Add header rule',
+    removeRule: 'Remove',
+    removeRuleLabel: 'Remove rule {number}',
+    ruleNumber: 'Rule {number}',
+    emptyRulesHint: 'At least one rule is required to enable authentication. Add a header rule.',
+    maxRulesHint: 'Configure up to {max} rules.',
+
+    title: 'Gateway header authentication',
+    description: 'Check multiple required headers before API key validation and model access.',
+    enabledLabel: 'Enable header authentication',
+    enabledHint: 'Applies to gateway endpoints. Admin pages and system settings remain accessible.',
+    headerName: 'Header to check',
+    headerNameHint: 'Default: User-Agent. Header names are case-insensitive; custom headers are supported.',
+    requiredSubstring: 'Required text within the header',
+    matchHint: 'Uses case-sensitive substring matching. For example, XundaAI/1.0 contains XundaAI.',
+    exampleLabel: 'Example client header',
+    rejectionHint: 'A missing or non-matching header in any rule returns an HTTP 401 authentication error before forwarding. API key validation still applies.',
+    saveSettings: 'Save header authentication',
+    saved: 'Header authentication saved and applied on this node.',
+    saveFailed: 'Could not save header authentication settings',
+    loadFailed: 'Could not load header authentication settings. Please retry.',
+  },
+}

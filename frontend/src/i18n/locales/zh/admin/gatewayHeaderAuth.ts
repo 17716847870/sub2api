@@ -1,0 +1,27 @@
+export default {
+  gatewayHeaderAuth: {
+    rulesTitle: '校验规则',
+    matchAllHint: '所有规则必须同时通过；任意一条缺少或不匹配都会拒绝请求。',
+    addRule: '添加请求头规则',
+    removeRule: '删除',
+    removeRuleLabel: '删除规则 {number}',
+    ruleNumber: '规则 {number}',
+    emptyRulesHint: '启用认证时至少需要一条规则，请添加请求头规则。',
+    maxRulesHint: '最多可配置 {max} 条规则。',
+
+    title: '网关请求头认证',
+    description: '可配置多条 Header 校验规则，全部匹配后才允许继续验证 API Key 和调用模型。',
+    enabledLabel: '启用请求头认证',
+    enabledHint: '只作用于模型网关，后台管理和系统设置不受此规则影响。',
+    headerName: '需要校验的请求头',
+    headerNameHint: '默认 User-Agent。请求头名称不区分大小写，也可以设置为自定义 Header。',
+    requiredSubstring: '请求头必须包含的内容',
+    matchHint: '按包含关系匹配，区分大小写。例如 XundaAI/1.0 包含 XundaAI。',
+    exampleLabel: '客户端请求头示例',
+    rejectionHint: '任意一条规则缺少请求头或内容不匹配时返回 HTTP 401 请求头权限认证错误，不转发到上游。原有 API Key 校验仍然执行。',
+    saveSettings: '保存请求头认证设置',
+    saved: '请求头认证设置已保存，当前节点立即生效。',
+    saveFailed: '保存请求头认证设置失败',
+    loadFailed: '加载请求头认证设置失败，请重试。',
+  },
+}

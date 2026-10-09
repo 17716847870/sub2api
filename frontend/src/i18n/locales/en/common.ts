@@ -163,6 +163,7 @@ export default {
 
   // Navigation
   nav: {
+    ipTokenLimits: 'IP token limits',
     dashboard: 'Dashboard',
     announcements: 'Announcements',
     apiKeys: 'API Keys',

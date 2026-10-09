@@ -1,3 +1,5 @@
+import gatewayHeaderAuth from './gatewayHeaderAuth'
+import ipTokenQuota from './ipTokenQuota'
 import overview from './overview'
 import channels from './channels'
 import accounts from './accounts'
@@ -9,6 +11,8 @@ import promptAudit from './promptAudit'
 import plugins from './plugins'
 
 export default {
+  ...gatewayHeaderAuth,
+  ...ipTokenQuota,
   ...overview,
   ...channels,
   ...accounts,

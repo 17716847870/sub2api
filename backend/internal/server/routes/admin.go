@@ -590,6 +590,11 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.GET("/openai-images-oauth-unavailable-cooldown", h.Admin.Setting.GetOpenAIImagesOAuthUnavailableCooldownSettings)
 		adminSettings.PUT("/openai-images-oauth-unavailable-cooldown", h.Admin.Setting.UpdateOpenAIImagesOAuthUnavailableCooldownSettings)
 		// 面板 API 限流配置
+		adminSettings.GET("/gateway-header-auth", h.Admin.Setting.GetGatewayHeaderAuthSettings)
+		adminSettings.PUT("/gateway-header-auth", h.Admin.Setting.UpdateGatewayHeaderAuthSettings)
+		adminSettings.GET("/daily-ip-token-quota", h.Admin.Setting.GetDailyIPTokenQuotaSettings)
+		adminSettings.PUT("/daily-ip-token-quota", h.Admin.Setting.UpdateDailyIPTokenQuotaSettings)
+		adminSettings.GET("/daily-ip-token-quota/limited-ips", h.Admin.Setting.ListDailyIPLimitedIPs)
 		adminSettings.GET("/panel-rate-limit", h.Admin.Setting.GetPanelRateLimitSettings)
 		adminSettings.PUT("/panel-rate-limit", h.Admin.Setting.UpdatePanelRateLimitSettings)
 		// 流超时处理配置

@@ -23,6 +23,7 @@ var ProviderSet = wire.NewSet(
 	NewOptionalJWTAuthMiddleware,
 	NewAdminAuthMiddleware,
 	NewAPIKeyAuthMiddleware,
+	NewDailyIPTokenQuotaMiddleware,
 	NewAuditLogMiddleware,
 	NewStepUpAuthMiddleware,
 )

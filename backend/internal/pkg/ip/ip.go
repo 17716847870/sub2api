@@ -154,7 +154,7 @@ func GetTrustedClientIP(c *gin.Context) string {
 	if c == nil {
 		return ""
 	}
-	return normalizeIP(c.ClientIP())
+	return normalizeValidIP(c.ClientIP())
 }
 
 // GetSecurityClientIP returns the address used by security-sensitive paths.

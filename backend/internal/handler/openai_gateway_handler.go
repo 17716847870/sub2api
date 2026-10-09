@@ -2968,6 +2968,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			ReasoningEffortMappings:     reasoningEffortMappings,
 			TurnStarted:                 recordTurnStart,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
+				if status, err := service.CheckDailyIPTokenQuota(ctx); err != nil {
+					if errors.Is(err, service.ErrDailyIPTokenQuotaExceeded) {
+						return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, status.Message(), err)
+					}
+					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "daily IP token quota is unavailable", err)
+				}
 				c.Set(securityAuditWSTurnContextKey, turn)
 				service.BeginOpsStreamTurn(c, turn)
 				setCyberTurnBody(turn, payload)
@@ -3434,6 +3440,10 @@ func (h *OpenAIGatewayHandler) submitUsageRecordTask(parent context.Context, tas
 	if task == nil {
 		return
 	}
+	if service.DailyIPTokenQuotaEnabled(parent) {
+		h.submitMandatoryUsageRecordTask(parent, task)
+		return
+	}
 	task, abandon := wrapUsageRecordTaskContext(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); mode != service.UsageRecordSubmitModeDroppedStopped {
@@ -3477,7 +3487,8 @@ func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(parent context.Con
 		return
 	}
 	task, _ = wrapUsageRecordTaskContext(parent, task)
-	if h.usageRecordWorkerPool != nil {
+	// With an IP quota, settle before the next request/WS turn can observe usage.
+	if h.usageRecordWorkerPool != nil && !service.DailyIPTokenQuotaEnabled(parent) {
 		if mode := h.usageRecordWorkerPool.Submit(task); !mode.Dropped() {
 			return
 		}
