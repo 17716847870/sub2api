@@ -16,7 +16,7 @@
         </div>
         <div class="card p-5">
           <p class="text-sm text-gray-500">{{ t('admin.ipTokenQuota.dailyLimit') }}</p>
-          <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ formatNumber(result.settings.daily_token_limit) }}</p>
+          <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ result.settings.daily_token_limit === 0 ? t('admin.ipTokenQuota.unlimited') : formatNumber(result.settings.daily_token_limit) }}</p>
           <p class="mt-1 text-xs text-gray-500">{{ result.settings.enabled ? t('admin.ipTokenQuota.on') : t('admin.ipTokenQuota.off') }}</p>
         </div>
         <div class="card p-5">
@@ -47,8 +47,8 @@
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
               <tr v-for="item in activeItems" :key="item.ip_address" class="text-gray-700 dark:text-gray-200">
-                <td class="whitespace-nowrap px-5 py-4 font-mono">{{ item.ip_address }}</td>
-                <td class="whitespace-nowrap px-5 py-4"><span class="font-semibold">{{ formatNumber(item.used_tokens) }}</span><span class="mt-1 block text-xs text-gray-500">{{ t('admin.ipTokenQuota.limitShort', { limit: formatNumber(result!.settings.daily_token_limit) }) }}</span></td>
+                <td class="whitespace-nowrap px-5 py-4"><span class="font-mono">{{ item.ip_address }}</span><span v-if="item.whitelisted" class="mt-1 block text-xs text-primary-600 dark:text-primary-400">{{ t('admin.ipTokenQuota.whitelistBadge') }}</span></td>
+                <td class="whitespace-nowrap px-5 py-4"><span class="font-semibold">{{ formatNumber(item.used_tokens) }}</span><span class="mt-1 block text-xs text-gray-500">{{ t('admin.ipTokenQuota.limitShort', { limit: formatNumber(item.daily_token_limit) }) }}</span></td>
                 <td class="px-5 py-4">{{ formatNumber(item.request_count) }}</td>
                 <td class="whitespace-nowrap px-5 py-4"><span class="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 dark:bg-red-900/20 dark:text-red-300">{{ t('admin.ipTokenQuota.blocked') }}</span></td>
                 <td class="whitespace-nowrap px-5 py-4">{{ formatTime(item.reset_at) }}</td>

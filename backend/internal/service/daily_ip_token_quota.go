@@ -64,7 +64,7 @@ func (s *DailyIPTokenQuotaService) Check(ctx context.Context, clientIP string) (
 	if err != nil {
 		return DailyIPTokenQuotaStatus{}, err
 	}
-	if !settings.Enabled {
+	if !settings.HasAnyLimit() {
 		return DailyIPTokenQuotaStatus{}, nil
 	}
 	location, err := time.LoadLocation(settings.Timezone)
@@ -78,7 +78,11 @@ func (s *DailyIPTokenQuotaService) Check(ctx context.Context, clientIP string) (
 	now := s.now().In(location)
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
 	end := start.AddDate(0, 0, 1)
-	status := DailyIPTokenQuotaStatus{Limit: settings.DailyTokenLimit, ResetAt: end}
+	limit, _ := settings.LimitForIP(address.String())
+	status := DailyIPTokenQuotaStatus{Limit: limit, ResetAt: end}
+	if limit == 0 {
+		return status, nil
+	}
 	if s.repo == nil {
 		return status, errors.New("daily IP token quota repository is unavailable")
 	}
@@ -126,15 +130,17 @@ func DailyIPTokenQuotaEnabled(ctx context.Context) bool {
 
 // DailyIPTokenUsageLister is separated from the hot-path repository to keep admission focused.
 type DailyIPTokenUsageLister interface {
-	ListLimitedIPs(ctx context.Context, start, end time.Time, limit int64, search string, page, pageSize int) ([]DailyIPLimitedIP, int64, error)
+	ListLimitedIPs(ctx context.Context, start, end time.Time, limit, whitelistLimit int64, whitelist []string, search string, page, pageSize int) ([]DailyIPLimitedIP, int64, error)
 }
 
 type DailyIPLimitedIP struct {
-	IPAddress    string    `json:"ip_address"`
-	UsedTokens   int64     `json:"used_tokens"`
-	RequestCount int64     `json:"request_count"`
-	LastUsedAt   time.Time `json:"last_used_at"`
-	ResetAt      time.Time `json:"reset_at"`
+	IPAddress       string    `json:"ip_address"`
+	DailyTokenLimit int64     `json:"daily_token_limit"`
+	Whitelisted     bool      `json:"whitelisted"`
+	UsedTokens      int64     `json:"used_tokens"`
+	RequestCount    int64     `json:"request_count"`
+	LastUsedAt      time.Time `json:"last_used_at"`
+	ResetAt         time.Time `json:"reset_at"`
 }
 
 type DailyIPLimitedIPList struct {
@@ -167,7 +173,7 @@ func (s *DailyIPTokenQuotaService) ListLimitedIPs(ctx context.Context, search st
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
 	end := start.AddDate(0, 0, 1)
 	result := &DailyIPLimitedIPList{Items: []DailyIPLimitedIP{}, Page: page, PageSize: pageSize, Settings: settings, DayStart: start, ResetAt: end, ServerTime: now}
-	if !settings.Enabled {
+	if !settings.HasAnyLimit() {
 		return result, nil
 	}
 	lister, ok := s.repo.(DailyIPTokenUsageLister)
@@ -176,7 +182,7 @@ func (s *DailyIPTokenQuotaService) ListLimitedIPs(ctx context.Context, search st
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	items, total, err := lister.ListLimitedIPs(ctx, start, end, settings.DailyTokenLimit, search, page, pageSize)
+	items, total, err := lister.ListLimitedIPs(ctx, start, end, settings.DailyTokenLimit, settings.WhitelistDailyTokenLimit, settings.Whitelist, search, page, pageSize)
 	if err != nil {
 		return nil, err
 	}

@@ -15,9 +15,9 @@ vi.mock('vue-i18n', async (importOriginal) => {
 const api = vi.hoisted(() => ({ list: vi.fn() }))
 vi.mock('@/api/admin/ipTokenQuota', () => ({ listLimitedIPs: api.list }))
 const fixture = () => ({
-  items: [{ ip_address: '203.0.113.8', used_tokens: 120000000, request_count: 24, last_used_at: '2026-10-09T10:00:00+08:00', reset_at: '2026-10-10T00:00:00+08:00' }],
+  items: [{ ip_address: '203.0.113.8', used_tokens: 120000000, daily_token_limit: 100000000, whitelisted: false, request_count: 24, last_used_at: '2026-10-09T10:00:00+08:00', reset_at: '2026-10-10T00:00:00+08:00' }],
   total: 1, page: 1, page_size: 20,
-  settings: { enabled: true, daily_token_limit: 100000000, timezone: 'Asia/Shanghai' },
+  settings: { enabled: true, daily_token_limit: 100000000, timezone: 'Asia/Shanghai', whitelist_daily_token_limit: 0, whitelist: [] },
   day_start: '2026-10-09T00:00:00+08:00', reset_at: '2026-10-10T00:00:00+08:00', server_time: '2026-10-09T10:00:00+08:00',
 })
 const mountView = () => mount(view, { global: {
@@ -68,4 +68,22 @@ describe('limited IP admin list', () => {
     expect(wrapper.text()).not.toContain('No IPs have reached')
     wrapper.unmount()
   })
+})
+
+it('shows each limited IP’s own quota and a whitelist badge when the default is unlimited', async () => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-10-09T02:00:00Z'))
+  const data = fixture()
+  data.settings.daily_token_limit = 0
+  data.items[0].daily_token_limit = 50000000
+  data.items[0].whitelisted = true
+  api.list.mockResolvedValue(data)
+  const wrapper = mountView()
+  await flushPromises()
+  expect(wrapper.text()).toContain('Unlimited')
+  expect(wrapper.text()).toContain('Whitelist quota')
+  expect(wrapper.text()).toContain('Limit 50,000,000')
+  expect(wrapper.text()).not.toContain('Limit 0')
+  wrapper.unmount()
+  vi.useRealTimers()
 })

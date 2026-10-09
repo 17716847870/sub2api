@@ -24,9 +24,11 @@ func (h *SettingHandler) GetDailyIPTokenQuotaSettings(c *gin.Context) {
 
 func (h *SettingHandler) UpdateDailyIPTokenQuotaSettings(c *gin.Context) {
 	var req struct {
-		Enabled         *bool   `json:"enabled"`
-		DailyTokenLimit *int64  `json:"daily_token_limit"`
-		Timezone        *string `json:"timezone"`
+		Enabled                  *bool     `json:"enabled"`
+		DailyTokenLimit          *int64    `json:"daily_token_limit"`
+		Timezone                 *string   `json:"timezone"`
+		WhitelistDailyTokenLimit *int64    `json:"whitelist_daily_token_limit"`
+		Whitelist                *[]string `json:"whitelist"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
@@ -37,6 +39,22 @@ func (h *SettingHandler) UpdateDailyIPTokenQuotaSettings(c *gin.Context) {
 		return
 	}
 	settings := service.DailyIPTokenQuotaSettings{Enabled: *req.Enabled, DailyTokenLimit: *req.DailyTokenLimit, Timezone: strings.TrimSpace(*req.Timezone)}
+	if req.Whitelist == nil || req.WhitelistDailyTokenLimit == nil {
+		// Clients saving just ordinary settings must preserve whitelist policy.
+		previous, err := h.settingService.GetDailyIPTokenQuotaSettings(c.Request.Context())
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		settings.Whitelist = previous.Whitelist
+		settings.WhitelistDailyTokenLimit = previous.WhitelistDailyTokenLimit
+	}
+	if req.Whitelist != nil {
+		settings.Whitelist = *req.Whitelist
+	}
+	if req.WhitelistDailyTokenLimit != nil {
+		settings.WhitelistDailyTokenLimit = *req.WhitelistDailyTokenLimit
+	}
 	if err := settings.Validate(); err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -45,7 +63,12 @@ func (h *SettingHandler) UpdateDailyIPTokenQuotaSettings(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, settings)
+	updated, err := h.settingService.GetDailyIPTokenQuotaSettingsCached(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, updated)
 }
 
 func (h *SettingHandler) ListDailyIPLimitedIPs(c *gin.Context) {

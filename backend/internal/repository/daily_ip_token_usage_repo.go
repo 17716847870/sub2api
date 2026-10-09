@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -30,7 +31,11 @@ func (r *dailyIPTokenUsageRepository) GetTokenUsageByIP(ctx context.Context, cli
 	return used, err
 }
 
-const limitedIPTokenUsageCTE = `WITH limited AS (
+// Effective thresholds are resolved before filtering or pagination so unlimited
+// whitelist IPs never appear and a lower unified whitelist limit is not missed.
+const limitedIPTokenUsageCTE = `WITH overrides AS (
+    SELECT jsonb_array_elements_text($6::jsonb) AS ip_address
+), usage AS (
     SELECT ip_address,
         SUM(GREATEST(input_tokens::bigint, 0) + GREATEST(output_tokens::bigint, 0) +
             GREATEST(cache_creation_tokens::bigint, 0) + GREATEST(cache_read_tokens::bigint, 0))::bigint AS used_tokens,
@@ -39,23 +44,34 @@ const limitedIPTokenUsageCTE = `WITH limited AS (
     WHERE created_at >= $1 AND created_at < $2 AND ip_address IS NOT NULL AND ip_address <> ''
         AND ($4 = '' OR strpos(ip_address, $4) > 0)
     GROUP BY ip_address
-    HAVING SUM(GREATEST(input_tokens::bigint, 0) + GREATEST(output_tokens::bigint, 0) +
-        GREATEST(cache_creation_tokens::bigint, 0) + GREATEST(cache_read_tokens::bigint, 0)) >= $3
+), limited AS (
+    SELECT u.*, (CASE WHEN w.ip_address IS NOT NULL THEN $5::bigint ELSE $3::bigint END) AS daily_token_limit,
+        w.ip_address IS NOT NULL AS whitelisted
+    FROM usage u LEFT JOIN overrides w ON w.ip_address = u.ip_address
+    WHERE (CASE WHEN w.ip_address IS NOT NULL THEN $5::bigint ELSE $3::bigint END) > 0
+        AND u.used_tokens >= (CASE WHEN w.ip_address IS NOT NULL THEN $5::bigint ELSE $3::bigint END)
 )`
 
-func (r *dailyIPTokenUsageRepository) ListLimitedIPs(ctx context.Context, start, end time.Time, limit int64, search string, page, pageSize int) ([]service.DailyIPLimitedIP, int64, error) {
+func (r *dailyIPTokenUsageRepository) ListLimitedIPs(ctx context.Context, start, end time.Time, limit, whitelistLimit int64, whitelist []string, search string, page, pageSize int) ([]service.DailyIPLimitedIP, int64, error) {
+	if whitelist == nil {
+		whitelist = []string{}
+	}
+	overrides, err := json.Marshal(whitelist)
+	if err != nil {
+		return nil, 0, err
+	}
 	// Both queries see the same snapshot, even as generation usage is being written.
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return nil, 0, err
 	}
 	defer tx.Rollback()
-	args := []any{start, end, limit, search}
+	args := []any{start, end, limit, search, whitelistLimit, string(overrides)}
 	var total int64
 	if err := tx.QueryRowContext(ctx, limitedIPTokenUsageCTE+` SELECT COUNT(*) FROM limited`, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := tx.QueryContext(ctx, limitedIPTokenUsageCTE+` SELECT ip_address, used_tokens, request_count, last_used_at FROM limited ORDER BY used_tokens DESC, ip_address ASC LIMIT $5 OFFSET $6`, append(args, pageSize, (page-1)*pageSize)...)
+	rows, err := tx.QueryContext(ctx, limitedIPTokenUsageCTE+` SELECT ip_address, used_tokens, request_count, last_used_at, daily_token_limit, whitelisted FROM limited ORDER BY used_tokens DESC, ip_address ASC LIMIT $7 OFFSET $8`, append(args, pageSize, (page-1)*pageSize)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -63,7 +79,7 @@ func (r *dailyIPTokenUsageRepository) ListLimitedIPs(ctx context.Context, start,
 	items := []service.DailyIPLimitedIP{}
 	for rows.Next() {
 		var item service.DailyIPLimitedIP
-		if err := rows.Scan(&item.IPAddress, &item.UsedTokens, &item.RequestCount, &item.LastUsedAt); err != nil {
+		if err := rows.Scan(&item.IPAddress, &item.UsedTokens, &item.RequestCount, &item.LastUsedAt, &item.DailyTokenLimit, &item.Whitelisted); err != nil {
 			return nil, 0, err
 		}
 		items = append(items, item)
